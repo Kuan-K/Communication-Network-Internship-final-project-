@@ -1,36 +1,38 @@
 ### client code
 
 ```
-# client.py
 import socket
 import time
 
-# === 你的環境設定 ===
-proxy_ip   = '20.89.64.170'   # 跑 proxy.exe 的那台主機
-proxy_port = 5405             # proxy listening port
+proxy_ip   = '20.89.64.170'   # proxy
+proxy_port = 5405
 
-server_ip  = '20.2.91.148'    # Ubuntu server
-ack_port   = 1234             # server 用來收 ACK 的 port
+server_ip  = '20.2.91.148'    # server
+ack_port   = 1234
 
 TOTAL = 100
 
-# 給「資料」用的 socket（走 proxy）
 data_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-# 給 ACK 用的 socket（直接跟 server 溝通）
 ack_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-ack_sock.bind(('', ack_port))       # 在 client 這台開 1234 等 ACK
+ack_sock.bind(('', ack_port))
 ack_sock.settimeout(1.0)
 
-print("Client: send HELLO to server for ACK address")
-# 直接對 server:1234 丟 HELLO，讓 server 知道 client 的 IP/port
+# 先跟 server 在 1234 打招呼，讓它知道 client 的位址
 ack_sock.sendto(b'HELLO', (server_ip, ack_port))
 
 for seq in range(1, TOTAL + 1):
+
+    first_send = True
     while True:
         send_ts = time.time()
-        msg = f"{seq}|{send_ts:.6f}"   # 序號 + timestamp
-        print(f"[SEND] packet {seq}")
+        msg = f"{seq}|{send_ts:.6f}"
+
+        # 只在這個 seq 第一次送的時候印出
+        if first_send:
+            print(f"[SEND] packet {seq}")
+            first_send = False
+
         data_sock.sendto(msg.encode(), (proxy_ip, proxy_port))
 
         try:
@@ -41,15 +43,14 @@ for seq in range(1, TOTAL + 1):
             if len(parts) == 2 and parts[0] == "ACK":
                 ack_num = int(parts[1])
                 if ack_num == seq:
-                    print(f"   -> got ACK {ack_num}")
-                    break    # 送下一個 seq
+                    # 拿到正確 ACK 才跳下一個 seq
+                    break
                 else:
-                    print(f"   -> got ACK {ack_num}, expect {seq}, keep waiting")
-            else:
-                print(f"   -> unknown msg: {text}")
-
+                    # 拿到舊 ACK/別的 ACK，忽略再等
+                    continue
         except socket.timeout:
-            print(f"   -> timeout, resend {seq}")
+            # timeout 就重送，但不多印任何訊息
+            continue
 
-print("Client finished.")
+print("Client done.")
 ```
